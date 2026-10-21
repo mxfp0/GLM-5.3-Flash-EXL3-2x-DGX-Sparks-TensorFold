@@ -19,7 +19,7 @@ DeepSeek stop hook remain, with the existing 300-second service stop budget.
 
 Rank order: spark1, spark2, spark3, spark4. Master `10.100.227.2:29551`.
 Gloo and NCCL sockets use `enp1s0f0np0`; all runtime traffic uses QSFP.
-SSH uses the explicit Wi-Fi management addresses. Existing routes, MTU 9000,
+SSH uses the explicit Ethernet management addresses. Existing routes, MTU 9000,
 stock 64 KiB kernel and NVIDIA driver remain unchanged.
 
 This profile uses the primary PCI domain of each physical cable:
@@ -218,3 +218,24 @@ resumed). Details and the changes measured and dropped: `EXPERIMENTS.md`, "Round
 - Rollback: `cp ~/prefill-lab/sparks.env.before-0113 site/sparks.env`, then unload and reload through the router (the
   `404488aedd91` image and its kernel cache are kept). The lab images' kernels were moved out of the stock image's cache
   to `~/.cache/tensorfold-glm53/lab-94cce4bf6ee4/`.
+
+## Prefill round 4 (2026-10-21)
+
+The prompt exchange's failures end in bounded time, and its proxies sleep when idle. No new switch and no reply
+change (five solo greedy prompts of 5K-13K tokens, cold and resumed, as round 3's). Details: `EXPERIMENTS.md`,
+"Round 4".
+
+- Image `tensorfold-glm53:v0.6.0-tp4-stock64k-prefill-ef05c7288567` on all four Sparks:
+  `site/Dockerfile.stock64k-prefill` now also applies `patches/0114-glm-prx-failstop-idle.patch`. Kernel cache
+  `~/.cache/tensorfold-glm53/ef05c7288567`.
+- A failed RDMA write, a dead rank or a stopped one reaches the client as an error within ~10 s (heartbeat
+  `TF_GLM_PRX_PEER_S=10`, watchdog `TF_GLM_PRX_TIMEOUT_S=300`), and the server exits 10 s later
+  (`TF_GLM_PRX_EXIT_S`), so the launcher and the router restart it at the next request. Round 3's image waited forever
+  on a stopped rank. `/health` shows each channel's calls, longest wait and failure.
+- The proxies sleep after 20 ms idle (`TF_GLM_PRX_IDLE_MS`): idle CPU ~2 % a Spark instead of two cores.
+- Measured through the router: 4,041 / 4,307 / 4,314 at 8K / 32K / 64K; RigMark 4,018 / 4,336 / 4,352 / 4,268 / 4,078
+  at 8K / 32K / 64K / 128K / 256K. GSM8K 97 %, both needles found.
+- Rebooted all four after the deploy (22:23): network, RoCE GIDs, services, THP `never` and `vm.min_free_kbytes`
+  45,166 came back as before, and the first request through the router loaded the model in 118 s with the same replies.
+- Rollback: `cp ~/prefill-lab/sparks.env.before-0114 site/sparks.env`, then unload and reload through the router (the
+  `404a07a20e25` image and its kernel cache are kept).
