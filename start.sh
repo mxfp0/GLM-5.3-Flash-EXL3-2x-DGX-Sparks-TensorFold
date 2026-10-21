@@ -318,6 +318,16 @@ env_args() {
 env_args
 RUN_ARGS=(--gpus all --ipc=host --network host --shm-size 16g --device /dev/infiniband --cap-add IPC_LOCK
           --ulimit memlock=-1 --ulimit stack=67108864)
+# NCCL_LIB_DIR (site option): the NCCL TensorFold loads instead of the image's (TF_NCCL_LIB), mounted from the same
+# path on every Spark: site/build-switchless-nccl.sh's NCCL 2.30.7 with RiNGSiDE's switchless dual-PF patches, with
+# their settings. With RING_TWINS=1 (scripts/nodes.sh) the ring exchange's links then use each port's PCIe twin too.
+if [[ -n "${NCCL_LIB_DIR:-}" ]]; then
+  RUN_ARGS+=(-v "$NCCL_LIB_DIR:/opt/switchless-nccl:ro" -e TF_NCCL_LIB=/opt/switchless-nccl/libnccl.so.2
+             -e NCCL_SWITCHLESS_RING_ONLY=1 -e NCCL_IB_EXTENDED_IPV4_GIDS=1 -e NCCL_IB_PRESERVE_PCI_DOMAIN=1
+             -e NCCL_IB_ADDR_FAMILY=AF_INET -e NCCL_IB_ROCE_VERSION_NUM=2)
+fi
+# EXTRA_DOCKER_ARGS (site option): more docker run options for every rank (e.g. --cap-add SYS_ADMIN for Nsight Systems)
+if [[ -n "${EXTRA_DOCKER_ARGS:-}" ]]; then read -ra _extra <<<"$EXTRA_DOCKER_ARGS"; RUN_ARGS+=("${_extra[@]}"); fi
 # DISPLAY_KV_BACKEND=dispram (patch 0087): dispramd's socket and its python client in every rank
 if (( DISPLAY_KV_MIB )) && [[ "$DISPLAY_KV_BACKEND" == dispram ]]; then
   RUN_ARGS+=(-v /run/dispram:/run/dispram -v /opt/kindling/dispram/python:/opt/dispram:ro -e PYTHONPATH=/opt/dispram)

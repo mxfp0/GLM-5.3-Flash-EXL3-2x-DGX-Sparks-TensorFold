@@ -498,25 +498,32 @@ ring_graphs() {
     fi
     # the ring (rank r of TP), and the two-rank links of patch 0098's ring exchange: to the previous rank (this rank
     # is the link's rank 1) and to the next (its rank 0)
-    for spec in "$path.xml $r $prev" "$path-link-prev.xml 1 $prev" "$path-link-next.xml 0 $next"; do
+    for spec in "$path.xml $r $prev $prev primary" "$path-link-prev.xml 1 $prev" "$path-link-next.xml 0 $next"; do
       set -- $spec
-      if (( r == 0 )); then graph_xml "$r" "$2" "$3" > "$1"
-      else graph_xml "$r" "$2" "$3" | worker "$r" "cat > '$1'" || die "could not write $1 on $(worker_host "$r")"; fi
+      if (( r == 0 )); then graph_xml "$r" "$2" "$3" "${4:-}" "${5:-}" > "$1"
+      else graph_xml "$r" "$2" "$3" "${4:-}" "${5:-}" | worker "$r" "cat > '$1'" || die "could not write $1 on $(worker_host "$r")"; fi
     done
     NODE_GRAPH[r]=$path
   done
 }
 # graph_xml <rank> <rank in the communicator> <peer>: an NCCL graph whose channels listen on rank's devices toward the
 # peer, a port and its PCIe twin in turn (subnet-aware routing moves each send to the device on the receiver's subnet)
+# primary_only <devices> <primary>: the devices, without the PCIe twins (roceP2...) when <primary> is set
+primary_only() {
+  if [[ -n "$2" ]]; then tr "," "\n" <<<"$1" | grep -v "^roceP2" | paste -sd, -; else echo "$1"; fi
+}
 graph_xml() {
-  local r=$1 cr=$2 peer=$3 k n d idx ch="" all toward xml
+  local r=$1 cr=$2 peer=$3 outp=${4:-$3} k n d idx odx ch="" all toward out xml
   IFS=, read -r -a all <<<"${NODE_HCAS[r]}"
-  IFS=, read -r -a toward <<<"${TOWARD["$r $peer"]:-}"
-  (( ${#toward[@]} )) || die "rank $r has no RoCE device toward rank $peer"
+  IFS=, read -r -a toward <<<"$(primary_only "${TOWARD["$r $peer"]:-}" "${5:-}")"
+  IFS=, read -r -a out <<<"$(primary_only "${TOWARD["$r $outp"]:-}" "${5:-}")"
+  (( ${#toward[@]} && ${#out[@]} )) || die "rank $r has no RoCE device toward rank $peer"
   for (( k = 0; k < ${NCCL_CHANNELS:-4}; k++ )); do
     d=${toward[k % ${#toward[@]}]}; idx=-1
     for (( n = 0; n < ${#all[@]}; n++ )); do [[ "${all[n]}" == "$d" ]] && idx=$n; done
-    ch+="    <channel><net dev=\"$idx\"/><gpu dev=\"0\" rank=\"$cr\"/><net dev=\"$idx\"/></channel>"$'\n'
+    d=${out[k % ${#out[@]}]}; odx=-1
+    for (( n = 0; n < ${#all[@]}; n++ )); do [[ "${all[n]}" == "$d" ]] && odx=$n; done
+    ch+="    <channel><net dev=\"$idx\"/><gpu dev=\"0\" rank=\"$cr\"/><net dev=\"$odx\"/></channel>"$'\n'
   done
   xml="<graphs version=\"1\">"$'\n'
   for k in "0 4" "1 3"; do
@@ -553,6 +560,11 @@ nccl_env() {
 # overlapped; an 8 MiB block a peer 2.7 ms against 4.6), else as all-gathers (TF_GLM_HC_EXCHANGE=gather: p2p sends to
 # every peer; three times the bytes, no overlap).
 # The ring's ports come from the node's graph file (ring_graphs), with NCCL's NIC fusion off.
+# RING_TWINS=1: the RoCE all-gathers (TF_ROCE_HCA) stay on the primary PCIe functions; NCCL gets the twins too
+primary_hcas() {
+  if [[ -n "${RING_TWINS:-}" ]]; then tr "," "\n" <<<"$1" | grep -v "^roceP2" | paste -sd, -; else echo "$1"; fi
+}
+
 nccl_env_n() {
   local dev=$1 hcas=$2 gid=$3 ring=""   # $4: the node's NCCL graph file (FABRIC=ring)
   if [[ "$FABRIC" == ring && -n "${4:-}" ]]; then
@@ -572,7 +584,7 @@ nccl_env_n() {
        "-e NCCL_CROSS_NIC=${NCCL_CROSS_NIC:-1} -e NCCL_IB_SUBNET_AWARE_ROUTING=${NCCL_IB_SUBNET_AWARE_ROUTING:-1}" \
        "-e NCCL_P2P_DISABLE=1 -e NCCL_SHM_DISABLE=1" \
        "-e NCCL_MIN_NCHANNELS=${NCCL_CHANNELS:-4} -e NCCL_MAX_NCHANNELS=${NCCL_CHANNELS:-4}" \
-       "-e TF_ROCE_HCA=$hcas" \
+       "-e TF_ROCE_HCA=$(primary_hcas "$hcas")" \
        ${NCCL_DEBUG:+-e NCCL_DEBUG=$NCCL_DEBUG}
 }
 rank_nccl_env() {
