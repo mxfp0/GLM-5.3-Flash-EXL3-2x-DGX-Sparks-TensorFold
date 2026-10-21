@@ -1,11 +1,15 @@
 # The site image of Dockerfile.stock64k (ID sha256:cea648e5a3aba7e479568be0ee53ea8dd95c2b98d51f670d2ad3364f07ef766e,
-# upstream PR #107 as 0110 on the pinned base) plus 0111: the prompt switches TF_GLM_PROMPT_FP8 / _W8 / _Y16, off
-# unless set (site/sparks.env sets them). Every Spark holds the site image, not the registry digest, so each builds:
-#   docker build -f site/Dockerfile.stock64k-prefill --build-arg TF_PATCH_HASH=9ae7c2842917 \
-#     -t tensorfold-glm53:v0.6.0-tp4-stock64k-prefill-9ae7c2842917 .
-# (9ae7c2842917: scripts/config.sh image_hash over patches/*.patch with 0110 and 0111)
+# upstream PR #107 as 0110 on the pinned base) plus 0111 (the prompt switches TF_GLM_PROMPT_FP8 / _W8 / _Y16) and 0112
+# (TF_GLM_DRAFT_SKIP, TF_GLM_PARTIAL16), off unless set (site/sparks.env sets them). Every Spark holds the site image,
+# not the registry digest, so each builds:
+#   docker build -f site/Dockerfile.stock64k-prefill --build-arg TF_PATCH_HASH=404488aedd91 \
+#     -t tensorfold-glm53:v0.6.0-tp4-stock64k-prefill-404488aedd91 .
+# (404488aedd91: scripts/config.sh image_hash over patches/*.patch with 0110-0112; 9ae7c2842917 was 0110 and 0111)
 FROM tensorfold-glm53:v0.6.0-tp4-stock64k-94cce4bf6ee4
 ARG TF_PATCH_HASH
 COPY patches/0111-glm-prompt-fp8-y16.patch /tmp/0111.patch
-RUN patch --batch --forward -p0 --directory /usr/local/lib/python3.12/dist-packages < /tmp/0111.patch && rm /tmp/0111.patch
-LABEL tf.patches=$TF_PATCH_HASH tf.site.prefill="0111-glm-prompt-fp8-y16"
+COPY patches/0112-glm-prompt-draft-skip-partial16.patch /tmp/0112.patch
+RUN for p in /tmp/0111.patch /tmp/0112.patch; do \
+      patch --batch --forward -p0 --directory /usr/local/lib/python3.12/dist-packages < "$p" || exit 1; \
+    done && rm /tmp/0111.patch /tmp/0112.patch
+LABEL tf.patches=$TF_PATCH_HASH tf.site.prefill="0111-glm-prompt-fp8-y16 0112-glm-prompt-draft-skip-partial16"
