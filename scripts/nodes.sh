@@ -35,7 +35,7 @@ declare -A WORKER_DOWN=()
 worker() {
   local i=$1; shift
   [[ -z "${WORKER_DOWN[$i]:-}" ]] || return 255
-  ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 "$(worker_host "$i")" "$@"
+  ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 "$(worker_host "$i")" "$@"
 }
 
 # save_log <dir> <rank> <container> <keep>: the container's log (stdout and stderr, with timestamps) gzipped into
@@ -292,6 +292,7 @@ node_inventory() {
   [[ -z "${1:-}" ]] || { ip -o -4 route get "$1" >/dev/null 2>&1 && echo "master ok" || echo "master none"; }
   for n in /sys/class/net/*; do
     dev=${n##*/}
+    [[ -z "${2:-}" || ",${2}," == *",$dev,"* ]] || continue
     [[ -d $n/device/infiniband && "$(cat "$n/operstate" 2>/dev/null)" == up ]] || continue
     hca=$(ls "$n/device/infiniband" | head -1)
     for cidr in $(ip -o -4 addr show dev "$dev" | awk '{print $4}'); do
@@ -391,9 +392,9 @@ detect_links() {
   local r i k peer kind a b c d pairs line missing="" names ring="" order=""
   [[ -n "$MASTER_ADDR" ]] || die "no MASTER_ADDR: set it to an address of this node that every worker reaches (its LAN address)"
   local -a inv=()
-  inv[0]=$(node_inventory)
+  inv[0]=$(node_inventory "" "${FABRIC_NETDEVS:-}")
   for i in $(worker_ids); do
-    inv[i]=$(worker "$i" "$(declare -f node_inventory); node_inventory $MASTER_ADDR" 2>/dev/null || true)
+    inv[i]=$(worker "$i" "$(declare -f node_inventory); node_inventory $MASTER_ADDR ${FABRIC_NETDEVS:-}" 2>/dev/null || true)
     [[ "${inv[i]}" != *"master none"* ]] ||
       die "$(worker_host "$i") has no route to MASTER_ADDR $MASTER_ADDR: set MASTER_ADDR to an address of this node it reaches"
   done

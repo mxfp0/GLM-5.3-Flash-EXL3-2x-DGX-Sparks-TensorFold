@@ -1,0 +1,5 @@
+FROM ghcr.io/miaai-lab/glm-5.3-flash-exl3-2x-dgx-sparks-tensorfold@sha256:eb17e092fa56ea23ca385c3aba0a4250d0cb46c705b9455f2e4c29d1ca4847e8
+ARG TF_PATCH_HASH
+COPY patches/0110-glm-mmap-uploads.patch /tmp/mmap-uploads.patch
+RUN patch --batch --forward -p0 --directory /usr/local/lib/python3.12/dist-packages < /tmp/mmap-uploads.patch && rm /tmp/mmap-uploads.patch
+LABEL tf.patches=$TF_PATCH_HASH tf.site.fix="upstream-pr107-mmap-uploads" tf.base.digest="sha256:eb17e092fa56ea23ca385c3aba0a4250d0cb46c705b9455f2e4c29d1ca4847e8"

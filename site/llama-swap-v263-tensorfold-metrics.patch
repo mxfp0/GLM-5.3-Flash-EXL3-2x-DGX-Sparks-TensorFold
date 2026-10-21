@@ -1,0 +1,140 @@
+diff --git a/internal/server/metrics.go b/internal/server/metrics.go
+index 9ddbc31..4896c7b 100644
+--- a/internal/server/metrics.go
++++ b/internal/server/metrics.go
+@@ -8,6 +8,7 @@ import (
+ 	"context"
+ 	"fmt"
+ 	"io"
++	"math"
+ 	"net"
+ 	"net/http"
+ 	"strings"
+@@ -231,6 +232,9 @@ func (mp *metricsMonitor) record(modelID string, r *http.Request, recorder *resp
+ 		usage := parsed.Get("usage")
+ 		timings := parsed.Get("timings")
+ 		responseMetrics := parsed.Get("metrics")
++		if !responseMetrics.Exists() {
++			responseMetrics = parsed.Get("tensorfold")
++		}
+ 
+ 		// /infill responses are arrays; timings live in the last element (#463).
+ 		if strings.HasPrefix(r.URL.Path, "/infill") {
+@@ -456,6 +460,9 @@ func processStreamingResponse(modelID string, start time.Time, body []byte) (Act
+ 		if m := parsed.Get("metrics"); m.Exists() {
+ 			responseMetrics = m
+ 			hasAny = true
++		} else if m := parsed.Get("tensorfold"); m.Exists() {
++			responseMetrics = m
++			hasAny = true
+ 		}
+ 	}
+ 
+@@ -547,6 +554,22 @@ func buildMetrics(modelID string, start time.Time, inputTokens, outputTokens, ca
+ 		tokensPerSecond = 1000 / meanInterTokenLatency.Float()
+ 	}
+ 
++	if promptPerSecond < 0 && responseMetrics.Get("prefill_s").Exists() {
++		cachedForRate := cachedTokens
++		if cachedForRate < 0 {
++			if cached := responseMetrics.Get("cached"); cached.Type == gjson.Number {
++				cachedForRate = cached.Int()
++			}
++		}
++		if cachedForRate >= 0 && cachedForRate <= inputTokens {
++			promptPerSecond = tensorfoldRate(inputTokens-cachedForRate, responseMetrics.Get("prefill_s"))
++		}
++	}
++	if tokensPerSecond < 0 {
++		// TensorFold samples the first output token during prefill.
++		tokensPerSecond = tensorfoldRate(outputTokens-1, responseMetrics.Get("decode_s"))
++	}
++
+ 	return ActivityLogEntry{
+ 		Timestamp: time.Now(),
+ 		Model:     modelID,
+@@ -682,3 +705,18 @@ func (w *responseBodyCopier) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+ 
+ func (w *responseBodyCopier) Status() int          { return w.status }
+ func (w *responseBodyCopier) StartTime() time.Time { return w.start }
++
++func tensorfoldRate(tokens int64, seconds gjson.Result) float64 {
++	if tokens <= 0 || seconds.Type != gjson.Number {
++		return -1
++	}
++	duration := seconds.Float()
++	if duration <= 0 || math.IsInf(duration, 0) || math.IsNaN(duration) {
++		return -1
++	}
++	rate := float64(tokens) / duration
++	if math.IsInf(rate, 0) || math.IsNaN(rate) {
++		return -1
++	}
++	return rate
++}
+diff --git a/internal/server/metrics_test.go b/internal/server/metrics_test.go
+index 5666b60..102fc9a 100644
+--- a/internal/server/metrics_test.go
++++ b/internal/server/metrics_test.go
+@@ -2,6 +2,7 @@ package server
+ 
+ import (
+ 	"context"
++	"fmt"
+ 	"io"
+ 	"math"
+ 	"net/http"
+@@ -731,3 +732,53 @@ func TestServer_MetricsMiddleware_UpstreamAudioCaptureSkipsRespBody(t *testing.T
+ 		t.Error("RespHeaders not stored; want captureRespHeaders mask")
+ 	}
+ }
++
++func TestMetricsMonitor_TensorFoldRates(t *testing.T) {
++	for _, tc := range []struct {
++		name, usage, metadata string
++		prefill, decode       float64
++	}{
++		{"existing rates take precedence", `"prompt_tokens":100,"completion_tokens":11,"prompt_tokens_per_sec":123,"completion_tokens_per_sec":45,"prompt_tokens_details":{"cached_tokens":20}`, `"prefill_s":2,"decode_s":1`, 123, 45},
++		{"partial cache", `"prompt_tokens":100,"completion_tokens":11,"prompt_tokens_details":{"cached_tokens":20}`, `"prefill_s":2,"decode_s":1`, 40, 10},
++		{"native cache fallback", `"prompt_tokens":100,"completion_tokens":11`, `"prefill_s":2,"decode_s":1,"cached":20`, 40, 10},
++		{"full cache", `"prompt_tokens":100,"completion_tokens":11,"prompt_tokens_details":{"cached_tokens":100}`, `"prefill_s":2,"decode_s":1`, -1, 10},
++		{"invalid cache", `"prompt_tokens":100,"completion_tokens":11,"prompt_tokens_details":{"cached_tokens":101}`, `"prefill_s":2,"decode_s":1`, -1, 10},
++		{"unknown cache", `"prompt_tokens":100,"completion_tokens":11`, `"prefill_s":2,"decode_s":1`, -1, 10},
++		{"one output", `"prompt_tokens":100,"completion_tokens":1,"prompt_tokens_details":{"cached_tokens":0}`, `"prefill_s":2,"decode_s":1`, 50, -1},
++		{"missing timings", `"prompt_tokens":100,"completion_tokens":11,"prompt_tokens_details":{"cached_tokens":0}`, `"cached":0`, -1, -1},
++		{"zero timings", `"prompt_tokens":100,"completion_tokens":11,"prompt_tokens_details":{"cached_tokens":0}`, `"prefill_s":0,"decode_s":0`, -1, -1},
++		{"nonnumeric timings", `"prompt_tokens":100,"completion_tokens":11,"prompt_tokens_details":{"cached_tokens":0}`, `"prefill_s":"2","decode_s":null`, -1, -1},
++		{"nonfinite timings", `"prompt_tokens":100,"completion_tokens":11,"prompt_tokens_details":{"cached_tokens":0}`, `"prefill_s":1e309,"decode_s":1e309`, -1, -1},
++		{"overflow rates", `"prompt_tokens":100,"completion_tokens":11,"prompt_tokens_details":{"cached_tokens":0}`, `"prefill_s":1e-309,"decode_s":1e-309`, -1, -1},
++	} {
++		for _, stream := range []bool{false, true} {
++			t.Run(fmt.Sprintf("%s/stream=%v", tc.name, stream), func(t *testing.T) {
++				body := `{"usage":{` + tc.usage + `},"tensorfold":{` + tc.metadata + `}}`
++				contentType := "application/json"
++				if stream {
++					contentType = "text/event-stream"
++					body = "data: " + body + "\n\ndata: [DONE]\n\n"
++				}
++				mm := newTestMetricsMonitor(t, logmon.NewWriter(io.Discard), 10, 0)
++				r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
++				w := httptest.NewRecorder()
++				copier := newBodyCopier(w)
++				copier.Header().Set("Content-Type", contentType)
++				copier.WriteHeader(http.StatusOK)
++				copier.Write([]byte(body))
++				mm.record("m", r, copier, captureAll, nil, nil)
++				entries := metricsEntries(t, mm)
++				if len(entries) != 1 {
++					t.Fatalf("entries = %d, want 1", len(entries))
++				}
++				got := entries[0].Tokens
++				if got.PromptPerSecond != tc.prefill || got.TokensPerSecond != tc.decode {
++					t.Fatalf("rates = %v/%v, want %v/%v", got.PromptPerSecond, got.TokensPerSecond, tc.prefill, tc.decode)
++				}
++				if w.Body.String() != body {
++					t.Fatal("response body changed")
++				}
++			})
++		}
++	}
++}

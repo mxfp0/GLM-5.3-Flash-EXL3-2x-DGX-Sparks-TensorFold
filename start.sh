@@ -311,6 +311,7 @@ fi
 env_args() {
   local _skip='^$' name
   ENV_ARGS=(-e HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}")
+  [[ -z "$SOCKET_IFNAME" ]] || ENV_ARGS+=(-e GLOO_SOCKET_IFNAME="$SOCKET_IFNAME")
   (( TP == 2 )) || _skip='^TF_ROCE_HCA='
   while IFS='=' read -r name _; do ENV_ARGS+=(-e "$name=${!name}"); done < <(env | grep -E '^(TENSORFOLD|TF_GLM|TF_ROCE)_[A-Z0-9_]+=' | grep -v "$_skip" || true)
 }
