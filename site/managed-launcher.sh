@@ -2,7 +2,7 @@
 set -euo pipefail
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 source "$root/site/sparks.env"
-hosts=(192.168.0.184 192.168.0.200 192.168.0.205 192.168.0.189)
+hosts=(192.168.0.112 192.168.0.180 192.168.0.244 192.168.0.25)
 ssh_args=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10
           -o ServerAliveInterval=5 -o ServerAliveCountMax=2)
 child=''

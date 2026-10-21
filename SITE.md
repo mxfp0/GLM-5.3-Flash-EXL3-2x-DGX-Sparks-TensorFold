@@ -2,7 +2,7 @@
 
 Upstream branch `tp4`, base `d22003070575c2774de0f010062aa57bae06f3c7`.
 
-Use llama-swap at `http://192.168.0.184:8080/v1`, model `GLM-5.3-Flash-EXL3`.
+Use llama-swap at `http://192.168.0.112:8080/v1`, model `GLM-5.3-Flash-EXL3`.
 Backend: `127.0.0.1:8898`. Start on demand through the router. Do not run a
 second direct launcher while a managed model is active.
 

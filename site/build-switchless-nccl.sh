@@ -23,7 +23,7 @@ fi
 [[ "$(git -C nccl write-tree)" == 9edccf0677e35c9b451eb2f5e037dfb9e6677a93 ]] || { echo "unexpected NCCL tree" >&2; exit 1; }
 docker run --rm -v "$work/nccl:/nccl" -w /nccl --entrypoint bash "$image" -c \
   "make -j18 src.build CUDA_HOME=/usr/local/cuda NVCC_GENCODE='-gencode=arch=compute_121,code=sm_121' >/nccl/build.log 2>&1 && chown -R $(id -u):$(id -g) /nccl/build"
-for host in localhost ${WORKERS:-192.168.0.200 192.168.0.205 192.168.0.189}; do
+for host in localhost ${WORKERS:-192.168.0.180 192.168.0.244 192.168.0.25}; do
   if [[ $host == localhost ]]; then
     mkdir -p "$dest" && cp nccl/build/lib/libnccl.so.2.30.7 "$dest/" && ln -sf libnccl.so.2.30.7 "$dest/libnccl.so.2"
   else
