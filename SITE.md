@@ -190,3 +190,31 @@ Details and the eleven changes measured and dropped: `EXPERIMENTS.md`, "Round 2"
   on the workers.
 - Rollback: `cp ~/prefill-lab/sparks.env.before-0112 site/sparks.env`, then unload and reload through the router (the
   `9ae7c2842917` image and its kernel cache are kept).
+
+## Prefill round 3 (2026-10-21)
+
+Five more exact prompt switches (the same replies as round 2's: five solo greedy prompts of 5K-13K tokens, cold and
+resumed). Details and the changes measured and dropped: `EXPERIMENTS.md`, "Round 3".
+
+- Image `tensorfold-glm53:v0.6.0-tp4-stock64k-prefill-404a07a20e25` on all four Sparks:
+  `site/Dockerfile.stock64k-prefill` now applies 0111, 0112 and `patches/0113-glm-prompt-ring-exchange.patch` to the
+  site image. Kernel cache `~/.cache/tensorfold-glm53/404a07a20e25`.
+- `site/sparks.env` adds `TF_GLM_PROMPT_HANDOFF8=1` (the KDA layers' input rows cross the ring as e4m3) and
+  `TF_GLM_PRX=1 TF_GLM_PRX_SHARE=1 TF_GLM_PRX_RINGAG=1 TF_GLM_PRX_ZC=1`: the row split's exchanges run on the NICs
+  alone (the copy engines stage rows in pinned memory, a proxy thread RDMA-writes them to the neighbours over both PCIe
+  functions, the GPU waits with stream memory operations; no NCCL kernel), with a second channel for the DSA shares, a
+  ring-aware all-gather and zero-copy partials.
+- Costs: the two proxy threads poll, a CPU core each on every Spark; ~770 MiB of pinned host memory a Spark. A failed
+  RDMA write or a dead peer leaves the GPU waiting with no timeout: the host side raises `TF_GLM_PRX failed` at its
+  next exchange, and the server has to be restarted (unload and reload through the router).
+- Measured through the router (client tok/s): 4,028 / 4,340 / 4,335 at 8K / 32K / 64K, and 3,971 / 4,221 / 4,266 in a
+  second run, against 3,387 / 3,590 / 3,596 before (+17 to +21 %). RigMark's prefill 4,077 / 4,342 / 4,289 / 4,252 /
+  4,058 tok/s at 8K / 32K / 64K / 128K / 256K (before: 3,485 / 3,687 / 3,683 / 3,601 / 3,463). GSM8K 97 %, both
+  needles found, decode unchanged. KV pool 5,201,920 tokens as before; MemAvailable after start 22.5 GB on the head,
+  25.7-26.4 GB on the workers.
+- `vm.min_free_kbytes` is 45,166 kB on every Spark. A transparent huge page test raised it to 6,471,424 kB, which cost
+  ~19 GiB of memory at start (the KV pool fell to ~4.2M tokens) until it was set back; if THP is ever enabled again,
+  check it afterwards.
+- Rollback: `cp ~/prefill-lab/sparks.env.before-0113 site/sparks.env`, then unload and reload through the router (the
+  `404488aedd91` image and its kernel cache are kept). The lab images' kernels were moved out of the stock image's cache
+  to `~/.cache/tensorfold-glm53/lab-94cce4bf6ee4/`.
