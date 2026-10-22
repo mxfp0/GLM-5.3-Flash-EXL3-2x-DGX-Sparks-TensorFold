@@ -1,5 +1,5 @@
 # Site patch, 2026-10-21 (spark1-spark4, TP4 ring): faster prompt chunks, three opt-in switches, all off by default.
-# Measured on this site (EXPERIMENTS.md, "Prefill toward 5,000 tok/s"); every switch changes the prompt's bits.
+# Measured on this site; every switch changes the prompt's bits.
 #
 # TF_GLM_PROMPT_FP8=1: a prompt chunk's 4-bit dense projections of at least TF_GLM_PROMPT_FP8_MIN_ROWS rows (256) run
 #   on TensorFold's own e4m3 tensor-core kernel, qmm.prefill_matmul8 (rows rounded to e4m3 with a scale each, the

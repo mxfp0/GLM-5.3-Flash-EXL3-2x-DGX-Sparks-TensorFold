@@ -1,5 +1,5 @@
 # Site patch, 2026-10-21 (spark1-spark4, TP4 ring): prompt switches, off by default, on top of 0111 and 0112.
-# Measured on this site (EXPERIMENTS.md, "Round 3"); none changes a bit of any reply (five solo greedy prompts of
+# Measured on this site; none changes a bit of any reply (five solo greedy prompts of
 # 5K-13K tokens, identical replies with and without; prx is a transport).
 #
 # TF_GLM_PROMPT_HANDOFF8=1 (with TF_GLM_PROMPT_W8): before a KDA layer a micro-batched chunk's glue rounds this rank's
@@ -82,7 +82,7 @@ index 0000000..29ddc74
 +with no GPU kernel: the copy engines stage each peer's bytes into a pinned region, the proxy thread (prx_proxy.c)
 +RDMA-writes them to the neighbours over both PCIe functions of the cable and the neighbours' proxies relay the across
 +rank's halves; the GPU waits for the data with stream memory operations and the copy engines move it into place. Under
-+the prompt kernels NCCL's link kernels got a third of the link (EXPERIMENTS.md P021-P026: they lose the SMs), while RDMA
++the prompt kernels NCCL's link kernels got a third of the link (they lose the SMs), while RDMA
 +writes from host memory kept their rate; here nothing of the exchange runs on an SM.
 +
 +The same bytes land in the same receive tensors as ``exchange_all`` (a transport, not arithmetic: the same bits).
@@ -309,7 +309,7 @@ index 0000000..29ddc74
 +
 +    def _copy(self, segs, out: bool) -> None:
 +        """Byte ranges between tensors and region offsets, (tensor bytes, lo, hi, region offset), on the copy engines
-+        (no SM: a copy kernel on the side stream waited for SMs behind the compute kernels, EXPERIMENTS.md P065-P067);
++        (no SM: a copy kernel on the side stream waited for SMs behind the compute kernels);
 +        ``out``: into the region (staging), else out of it."""
 +
 +        for t, lo, hi, at in segs:

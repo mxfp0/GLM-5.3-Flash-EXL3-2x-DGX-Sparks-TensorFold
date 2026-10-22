@@ -1,5 +1,5 @@
 # Site patch, 2026-10-21 (spark1-spark4, TP4 ring): two opt-in prompt switches, off by default, on top of 0111.
-# Measured on this site (EXPERIMENTS.md, "Round 2"); neither changes a bit of any reply (five solo greedy prompts of
+# Measured on this site; neither changes a bit of any reply (five solo greedy prompts of
 # 5K-13K tokens, identical replies with and without).
 #
 # TF_GLM_DRAFT_SKIP=1: a prompt's DFlash2 taps go into the drafter's context only within reach of where it is read

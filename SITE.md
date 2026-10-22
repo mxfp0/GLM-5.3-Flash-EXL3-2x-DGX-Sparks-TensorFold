@@ -149,8 +149,7 @@ with unchanged image/source hashes and zero OOM/restarts. NFS is preserved.
 
 ## Prefill configuration (2026-10-21)
 
-The router's model now runs a faster prompt path; everything else above still holds. Details, every measurement and
-the experiments that did not help: `EXPERIMENTS.md`, "Prefill toward 5,000 tok/s".
+The router's model now runs a faster prompt path; everything else above still holds.
 
 - Image `tensorfold-glm53:v0.6.0-tp4-stock64k-prefill-9ae7c2842917` on all four Sparks: the site image above plus
   `patches/0111-glm-prompt-fp8-y16.patch` (`site/Dockerfile.stock64k-prefill`). 0111 adds three opt-in prompt
@@ -177,7 +176,6 @@ the experiments that did not help: `EXPERIMENTS.md`, "Prefill toward 5,000 tok/s
 ## Prefill round 2 (2026-10-21)
 
 Two more exact prompt switches (no reply changes: five solo greedy prompts of 5K-13K tokens give the same replies).
-Details and the eleven changes measured and dropped: `EXPERIMENTS.md`, "Round 2".
 
 - Image `tensorfold-glm53:v0.6.0-tp4-stock64k-prefill-404488aedd91` on all four Sparks: `site/Dockerfile.stock64k-prefill`
   now applies `patches/0111-glm-prompt-fp8-y16.patch` and `patches/0112-glm-prompt-draft-skip-partial16.patch` to the
@@ -194,7 +192,7 @@ Details and the eleven changes measured and dropped: `EXPERIMENTS.md`, "Round 2"
 ## Prefill round 3 (2026-10-21)
 
 Five more exact prompt switches (the same replies as round 2's: five solo greedy prompts of 5K-13K tokens, cold and
-resumed). Details and the changes measured and dropped: `EXPERIMENTS.md`, "Round 3".
+resumed).
 
 - Image `tensorfold-glm53:v0.6.0-tp4-stock64k-prefill-404a07a20e25` on all four Sparks:
   `site/Dockerfile.stock64k-prefill` now applies 0111, 0112 and `patches/0113-glm-prompt-ring-exchange.patch` to the
@@ -222,8 +220,7 @@ resumed). Details and the changes measured and dropped: `EXPERIMENTS.md`, "Round
 ## Prefill round 4 (2026-10-21)
 
 The prompt exchange's failures end in bounded time, and its proxies sleep when idle. No new switch and no reply
-change (five solo greedy prompts of 5K-13K tokens, cold and resumed, as round 3's). Details: `EXPERIMENTS.md`,
-"Round 4".
+change (five solo greedy prompts of 5K-13K tokens, cold and resumed, as round 3's).
 
 - Image `tensorfold-glm53:v0.6.0-tp4-stock64k-prefill-ef05c7288567` on all four Sparks:
   `site/Dockerfile.stock64k-prefill` now also applies `patches/0114-glm-prx-failstop-idle.patch`. Kernel cache
